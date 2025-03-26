@@ -7,7 +7,7 @@ namespace FanControl.ADLX
     {
         private readonly PerformanceMonitor _performanceMonitor;
         private readonly GPU _gpu;
-        private GPUMetricsStruct _metrics;
+        private GPUMetricsStruct1 _metrics1;
 
         public GPUMetricsProvider(PerformanceMonitor performanceMonitor, GPU gpu)
         {
@@ -18,10 +18,10 @@ namespace FanControl.ADLX
 
         public void UpdateMetrics()
         {
-            _metrics = _performanceMonitor.GetGPUMetricsStruct(_gpu);
+            _metrics1 = _performanceMonitor.GetGPUMetricsStruct1(_gpu);
         }
 
 
-        public GPUMetricsStruct Current => _metrics;
+        public GPUMetricsStruct1 Current => _metrics1;
     }
 }

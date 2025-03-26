@@ -3,6 +3,7 @@ using FanControl.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace FanControl.ADLX
 {
@@ -32,10 +33,32 @@ namespace FanControl.ADLX
         {
             try
             {
+                Log("Initializing ADLX");
                 _wrapper = new ADLXWrapper.ADLXWrapper();
-                _system = _wrapper.GetSystemServices();
-                _gpus = _system.GetGPUs();
+                _wrapper.Initialize();
+                
+                // Even though _wrapper.Initialize() returns it may take some time for it to actually be initialized
+                var retryCount = 0;
+                const int retryMax = 5, retryInterval = 1000; // ms
+                while (retryCount < retryMax)
+                {
+                    Thread.Sleep(retryInterval);
+                    try
+                    {
+                        _system = _wrapper.GetSystemServices(); // Throws an error if ADLX isn't initialized
+                        break; // Only called if GetSystemServices() threw no exception
+                    }
+                    catch (ADLXEception e)
+                    {
+                        Log($"Failed to get system services due to error: {e.Message}");
+                        
+                    }
+                    retryCount++;
+                }
 
+                Log($"ADLX initialized after {retryCount} retries");
+                _gpus = _system.GetGPUs();
+                
                 _tuning = _system.GetGPUTuningService();
                 _perf = _system.GetPerformanceMonitor();
 
@@ -60,11 +83,12 @@ namespace FanControl.ADLX
             {
                 return;
             }
-
+            Log("Getting GPUs from ADLX");
             ADLXControl[] controls = _gpus.Where(x => _fans.ContainsKey(x.UniqueId)).Select(x => new ADLXControl(x, _fans[x.UniqueId])).ToArray();
             ADLXFanSensor[] fanSensors = _gpus.Zip(_metricsProviders, (gpu, m) => new ADLXFanSensor(gpu, m)).ToArray();
-            ADLXTemperatureSensor[] hotspots = _gpus.Zip(_metricsProviders, (gpu, m) => new ADLXTemperatureSensor("Hotspot", gpu, () => m.Current.GPUHotspotTemperature)).ToArray();
-            ADLXTemperatureSensor[] gpuTemps = _gpus.Zip(_metricsProviders, (gpu, m) => new ADLXTemperatureSensor("GPU", gpu, () => m.Current.GPUTemperature)).ToArray();
+            ADLXTemperatureSensor[] gpuHotspots = _gpus.Zip(_metricsProviders, (gpu, m) => new ADLXTemperatureSensor("Hotspot", gpu, () => m.Current.GPUHotspotTemperature)).ToArray();
+            ADLXTemperatureSensor[] gpuTemps = _gpus.Zip(_metricsProviders, (gpu, m) => new ADLXTemperatureSensor("Core", gpu, () => m.Current.GPUTemperature)).ToArray();
+            ADLXTemperatureSensor[] gpuMemoryTemps = _gpus.Zip(_metricsProviders, (gpu, m) => new ADLXTemperatureSensor("Memory", gpu, () => m.Current.GPUMemoryTemperature)).ToArray();
 
             foreach (var control in controls)
             {
@@ -76,7 +100,9 @@ namespace FanControl.ADLX
                 _container.FanSensors.Add(fan);
             }
 
-            foreach (var temp in hotspots.Concat(gpuTemps))
+            Log("Combining temps");
+            var combinedTemps = gpuHotspots.Concat(gpuTemps).Concat(gpuMemoryTemps);
+            foreach (var temp in combinedTemps)
             {
                 _container.TempSensors.Add(temp);
             }
